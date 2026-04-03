@@ -12,16 +12,10 @@ temperature: 0.15       # low = reliable JSON tool calls
 max_steps: 15           # hard cap on agentic loop iterations
 verbose: true
 
-# ── MCP Server (stdio transport) ──────────────────────────────────
+# ── MCP Server (HTTP/Streamable-HTTP transport) ───────────────────
+# Start the server first: npm run build && node dist/index.js
 mcp:
-  command: node
-  args:
-    - dist/index.js
-  # Environment variables forwarded to the MCP server process.
-  # Values are read from the agent process environment at runtime.
-  env:
-    - API_BASE_URL     # e.g. http://localhost:3003
-    - API_KEY          # Bearer token for the REST API
+  url: http://127.0.0.1:3333/mcp
 
 # ── Pagination defaults ───────────────────────────────────────────
 default_limit: "10"    # string — MCP schema expects strings

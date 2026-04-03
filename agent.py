@@ -1,7 +1,10 @@
 """
 Bridges & Inspections Intelligence Agent
 ─────────────────────────────────────────
-QwenV3 (Ollama) + Bridges-Inspections MCP server (stdio, official SDK).
+QwenV3 (Ollama) + Bridges-Inspections MCP server (HTTP/Streamable-HTTP).
+
+Start the MCP server first:
+    npm run build && node dist/index.js
 
 Usage:
     python agent.py "Show me statistics of all bridges"
@@ -11,7 +14,6 @@ Usage:
 
 import asyncio
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -20,8 +22,8 @@ from typing import Any
 import ollama
 import yaml
 from dotenv import load_dotenv
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 load_dotenv()
 
@@ -36,19 +38,8 @@ VERBOSE     = bool(cfg["verbose"])
 DEF_LIMIT   = cfg["default_limit"]          # "10" (string)
 MEMORY_DIR  = Path(__file__).parent / cfg.get("memory_dir", "memory/")
 
-# MCP server launch config
-MCP_COMMAND  = cfg["mcp"]["command"]         # "node"
-MCP_ARGS     = cfg["mcp"]["args"]            # ["dist/index.js"]
-MCP_ENV_KEYS = cfg["mcp"].get("env", [])    # env var names to forward
-
-# Forward listed env vars to the MCP server subprocess
-mcp_env: dict[str, str] = {}
-for key in MCP_ENV_KEYS:
-    val = os.environ.get(key)
-    if val:
-        mcp_env[key] = val
-    else:
-        print(f"⚠️  Warning: env var {key!r} not set — MCP server may reject requests.")
+# MCP server URL (HTTP/Streamable-HTTP transport)
+MCP_URL = cfg["mcp"]["url"]                 # e.g. http://127.0.0.1:3333/mcp
 
 # ── Memory loader ─────────────────────────────────────────────────────────────
 def load_memory() -> str:
@@ -356,26 +347,9 @@ async def run_agent_turn(
     return final_answer, updated_history
 
 
-# ── Session setup ─────────────────────────────────────────────────────────────
-async def make_session_context():
-    """Async context manager that yields (session, tools, tool_names, system_prompt)."""
-    server_params = StdioServerParameters(
-        command=MCP_COMMAND,
-        args=MCP_ARGS,
-        env=mcp_env if mcp_env else None,
-    )
-    return server_params
-
-
 # ── Single-query entry point ───────────────────────────────────────────────────
 async def run_agent(user_query: str) -> str:
-    server_params = StdioServerParameters(
-        command=MCP_COMMAND,
-        args=MCP_ARGS,
-        env=mcp_env if mcp_env else None,
-    )
-
-    async with stdio_client(server_params) as (read, write):
+    async with streamablehttp_client(MCP_URL) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -416,13 +390,7 @@ async def interactive() -> None:
     print("🌉 Bridges & Inspections Intel Agent  [QwenV3 · local]")
     print("   Type 'quit' or press Ctrl-C to exit.\n")
 
-    server_params = StdioServerParameters(
-        command=MCP_COMMAND,
-        args=MCP_ARGS,
-        env=mcp_env if mcp_env else None,
-    )
-
-    async with stdio_client(server_params) as (read, write):
+    async with streamablehttp_client(MCP_URL) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
