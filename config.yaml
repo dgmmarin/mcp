@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────────
+#  Bridges Inspections Intel Agent — Runtime Configuration
+# ─────────────────────────────────────────────────────────────────
+
+# ── Model ─────────────────────────────────────────────────────────
+model: qwen3.5:9b
+# Alternatives for 8 GB VRAM:
+#   qwen3:8b-q4_K_M   → ~4.5 GB, slightly lower quality
+#   qwen3:14b-q4_K_M  → ~8 GB, close to VRAM ceiling
+
+temperature: 0.15       # low = reliable JSON tool calls
+max_steps: 15           # hard cap on agentic loop iterations
+verbose: true
+
+# ── MCP Server (stdio transport) ──────────────────────────────────
+mcp:
+  command: node
+  args:
+    - dist/index.js
+  # Environment variables forwarded to the MCP server process.
+  # Values are read from the agent process environment at runtime.
+  env:
+    - API_BASE_URL     # e.g. http://localhost:3003
+    - API_KEY          # Bearer token for the REST API
+
+# ── Pagination defaults ───────────────────────────────────────────
+default_limit: "10"    # string — MCP schema expects strings
+
+# ── Memory ───────────────────────────────────────────────────────
+memory_dir: memory/

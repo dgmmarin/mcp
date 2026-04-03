@@ -1,0 +1,18 @@
+# Secrets — never commit
+.env
+.mcp.json
+
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor
+.vscode/
