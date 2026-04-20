@@ -10,21 +10,59 @@ import {
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:3003";
-const API_KEY      = process.env.API_KEY || "";
+const RAW_API_KEY  = (process.env.API_KEY || "").trim();
+const API_KEY      = RAW_API_KEY.replace(/^Bearer\s+/i, "");
 const MCP_PORT     = parseInt(process.env.MCP_PORT || "3333", 10);
-const MCP_HOST     = process.env.MCP_HOST || "127.0.0.1";
+const MCP_HOST     = process.env.MCP_HOST || "0.0.0.0";
+
+function validateConfig() {
+  const errors: string[] = [];
+
+  if (!API_KEY) {
+    errors.push("API_KEY is missing. Set API_KEY in the process environment.");
+  }
+
+  try {
+    // Ensure API base URL is an absolute URL to avoid silent fetch failures.
+    new URL(API_BASE_URL);
+  } catch {
+    errors.push(`API_BASE_URL is invalid: '${API_BASE_URL}'`);
+  }
+
+  if (errors.length > 0) {
+    const errorMsg = `Configuration error:\n- ${errors.join("\n- ")}`;
+    console.log(`[CONFIG-ERROR] Details:`, errors);
+    console.error(`[CONFIG] ✗ ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  console.log(`[CONFIG] ✓ Validated config: API_BASE_URL=${API_BASE_URL}, API_KEY_len=${API_KEY.length}`);
+}
 
 async function apiFetch(path: string, params: Record<string, string> = {}) {
   const url = new URL(`${API_BASE_URL}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
+  const fullUrl = url.toString();
+  const paramStr = Object.keys(params).length > 0 ? `?${new URLSearchParams(params)}` : "";
+  console.log(`[API] → ${path}${paramStr}`);
+
+  const res = await fetch(fullUrl, {
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
     },
   });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
-  return res.json();
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.log(`[API-ERROR] Status: ${res.status}, Path: ${path}, Response:`, errText.slice(0, 300));
+    console.error(`[API] ✗ Error ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  console.log(`[API] ✓ ${res.status} OK`);
+  return data;
 }
 
 // ─── MCP Server ────────────────────────────────────────────────────────────
@@ -212,6 +250,8 @@ function createServer(): Server {
     const { name, arguments: args } = request.params;
     const a = (args ?? {}) as Record<string, string>;
 
+    console.log(`[TOOL-CALL] → ${name} | args: ${JSON.stringify(a).slice(0, 150)}`);
+
     try {
       let data: unknown;
 
@@ -288,17 +328,24 @@ function createServer(): Server {
         }
 
         default:
+          const unknownToolMsg = `Unknown tool: ${name}`;
+          console.log(`[UNKNOWN-TOOL] Name: ${name}, Available args:`, Object.keys(a));
+          console.error(`[TOOL-ERROR] ✗ ${unknownToolMsg}`);
           return {
-            content: [{ type: "text", text: `Unknown tool: ${name}` }],
+            content: [{ type: "text", text: unknownToolMsg }],
             isError: true,
           };
       }
 
+      console.log(`[TOOL-RESULT] ✓ ${name} completed successfully`);
       return {
         content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      const fullErr = err instanceof Error ? err.stack : String(err);
+      console.log(`[TOOL-CATCH] Tool: ${name}, Error details:`, fullErr);
+      console.error(`[TOOL-ERROR] ✗ ${name} failed: ${message}`);
       return {
         content: [{ type: "text", text: `Error: ${message}` }],
         isError: true,
@@ -311,6 +358,8 @@ function createServer(): Server {
 
 // ─── HTTP entrypoint ───────────────────────────────────────────────────────
 async function main() {
+  validateConfig();
+
   // Stateless transport — a fresh transport + server per request keeps things
   // simple for a single-agent deployment. No session management needed.
   const app = createMcpExpressApp({ host: MCP_HOST });
@@ -341,10 +390,26 @@ async function main() {
 
   const httpServer = http.createServer(app);
   httpServer.listen(MCP_PORT, MCP_HOST, () => {
-    console.error(
-      `Bridges & Inspections MCP Server listening on http://${MCP_HOST}:${MCP_PORT}/mcp`,
+    console.log(
+      `[STARTUP] ✓ Bridges & Inspections MCP Server listening on http://${MCP_HOST}:${MCP_PORT}/mcp`,
     );
+  });
+
+  process.on("SIGTERM", () => {
+    console.log("[SHUTDOWN] SIGTERM received, closing server...");
+    httpServer.close();
+  });
+
+  process.on("SIGINT", () => {
+    console.log("[SHUTDOWN] SIGINT received, closing server...");
+    httpServer.close();
   });
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  const errMsg = err instanceof Error ? err.message : String(err);
+  const errStack = err instanceof Error ? err.stack : "";
+  console.log(`[STARTUP-ERROR] Full error:`, errStack);
+  console.error(`[FATAL] ✗ Startup failed: ${errMsg}`);
+  process.exit(1);
+});

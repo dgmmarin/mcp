@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        API_BASE_URL: ${API_BASE_URL}
+        API_KEY: ${API_KEY}
     ports:
       - "3333:3333"
     environment:

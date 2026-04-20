@@ -16,6 +16,9 @@ FROM node:22-alpine AS runtime
 
 WORKDIR /app
 
+ARG API_BASE_URL
+ARG API_KEY
+
 # Install only production dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
@@ -29,6 +32,8 @@ USER mcp
 
 ENV MCP_HOST=0.0.0.0
 ENV MCP_PORT=3333
+ENV API_BASE_URL=${API_BASE_URL}
+ENV API_KEY=${API_KEY}
 
 EXPOSE 3333
 
